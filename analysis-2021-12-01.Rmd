@@ -1,0 +1,129 @@
+---
+title: "EAR Analysis"
+author: "J. Lucas McKay"
+date: "December 1 2021"
+output: html_document
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  collapse = TRUE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+# Exploratory data analysis
+
+```{r}
+library(tidyverse)
+library(motionTools)
+
+# "plus equals" function
+`%+=%` = function(e1,e2) eval.parent(substitute(e1 <- e1 + e2))
+
+  # rename(emg_baseline = `EMG Baseline`, emg_peak = `EMG Peak`, emg_peak_base = `Peak - Base`) |> 
+
+data = read_csv("EAR_PD_Table.csv") |> 
+  rename(`EMG Peak - Base` = `Peak - Base`) |> 
+  mutate(Muscle = case_when(
+    Muscle %contains% "MGAS" ~ "MGAS",
+    Muscle %contains% "TA" ~ "TA",
+    Muscle %contains% "SOL" ~ "SOL",
+    TRUE ~ ""
+  )) |> 
+  filter(Muscle != "")
+
+# Consider only the shortening reactions
+data2 = data |> 
+  filter((Direction == 90 & Muscle == "MGAS")|(Direction == 90 & Muscle == "SOL")|(Direction == 270 & Muscle == "TA"))
+```
+
+# EMG levels during shortening vs. condition
+
+```{r}
+data3 = data2 |> 
+  select(-Direction) |> 
+  pivot_longer(starts_with("EMG"), names_to = "Window", values_to = "EMG") |> 
+  mutate(Condition = factor(Condition))
+```
+
+```{r}
+data3 |>
+  filter(Window == "EMG Baseline") |> 
+  ggplot(aes(EMG,fill = Condition)) + geom_density(alpha = 0.5) + facet_grid(cols = vars(State),rows=vars(Muscle)) +
+  scale_fill_viridis_d(end = 0.6) +
+  theme_minimal() +
+  labs(title = "EMG Baseline")
+```
+
+```{r}
+data3 |>
+  filter(Window == "EMG Peak - Base") |> 
+  ggplot(aes(EMG,fill = Condition)) + geom_density(alpha = 0.5) + facet_grid(cols = vars(State),rows=vars(Muscle)) +
+  scale_fill_viridis_d(end = 0.6) +
+  theme_minimal() +
+  labs(title = "EMG Peak - Base")
+```
+
+
+# Average values
+
+```{r}
+emg_summary = data3 |> group_by(State,Condition,Muscle,Window) |> summarize(EMG = mean(EMG, na.rm = T), .groups = "drop")
+```
+
+```{r}
+emg_summary |> 
+  filter(Window == "EMG Baseline") |> 
+  ggplot(aes(Condition,EMG,fill = Condition)) +
+    geom_col() +
+    facet_grid(cols = vars(State),rows=vars(Muscle)) +
+  scale_fill_viridis_d(end = 0.6) +
+  theme_minimal() +
+  labs(title = "EMG Baseline")
+```
+
+```{r}
+emg_summary |> 
+  filter(Window == "EMG Peak - Base") |> 
+  ggplot(aes(Condition,EMG,fill = Condition)) +
+    geom_col() +
+    facet_grid(cols = vars(State),rows=vars(Muscle)) +
+  scale_fill_viridis_d(end = 0.6) +
+  theme_minimal() +
+  labs(title = "EMG Peak - Base")
+```
+
+# Effects of testing condition on baseline EMG
+
+```{r}
+emg_baseline = data3 |>
+  filter(Window == "EMG Baseline")
+
+mdl_baseline = lmerTest::lmer(EMG~Condition+State+Muscle+(1|Name), data = emg_baseline)
+summary(mdl_baseline)
+anova(mdl_baseline)
+```
+
+# Effects of testing condition on peak EMG
+
+```{r}
+emg_peak_baseline = data3 |>
+  filter(Window == "EMG Peak - Base")
+mdl_peak_baseline = lmerTest::lmer(EMG~Condition+State+Muscle+(1|Name), data = emg_peak_baseline)
+summary(mdl_peak_baseline)
+anova(mdl_peak_baseline)
+```
+
+# Methods
+
+Average EMG levels during baseline ("Baseline," X-X ms prior to perturbation onset) and during the shortening reaction ("Peak," X-X ms) were calculated for each muscle in each patient. Baseline values were subtracted from Peak values prior to analysis.
+Variation in EMG level with medication state and testing condition were assessed with separate linear mixed models for Baseline and Peak.
+
+# Results
+
+Linear mixed models (Condition x State x Muscle) identified significant effects of Condition (P<0.001) on baseline EMG but not on peak EMG (P=0.37), as well as highly significant effects of medication state in both baseline (P<<0.001) and peak (P<<0.001).
+
+
